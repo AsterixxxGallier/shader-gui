@@ -1,3 +1,5 @@
-fn main() {
-    println!("Hello, world!");
+mod gui;
+
+fn main() -> eframe::Result {
+    gui::main()
 }
