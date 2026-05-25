@@ -1,6 +1,6 @@
-use eframe::{egui, CreationContext, Renderer};
-use egui::{ThemePreference, Widget};
-use crate::gui_gpu::Custom3d;
+use eframe::{egui, CreationContext};
+use egui::{Key, Modifiers, ThemePreference, Widget};
+use crate::gui_gpu::Renderer;
 
 pub mod viewport;
 
@@ -8,7 +8,7 @@ pub(crate) fn main() -> eframe::Result {
     env_logger::init(); // Log to stderr (if you run with `RUST_LOG=debug`).
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_inner_size([1600.0, 900.0]),
-        renderer: Renderer::Wgpu,
+        renderer: eframe::Renderer::Wgpu,
         ..Default::default()
     };
     eframe::run_native(
@@ -19,19 +19,20 @@ pub(crate) fn main() -> eframe::Result {
 }
 
 struct MyApp {
-    custom_3d: Custom3d,
+    renderer: Renderer,
 }
 
 impl MyApp {
     fn new(cc: &CreationContext) -> Self {
+        Renderer::load(cc.wgpu_render_state.as_ref().unwrap());
         Self {
-            custom_3d: Custom3d::new(cc.wgpu_render_state.as_ref().unwrap()).unwrap(),
+            renderer: Renderer::new(),
         }
     }
 }
 
 impl eframe::App for MyApp {
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         ui.set_theme(ThemePreference::Light);
         // egui::CentralPanel::default().show_inside(ui, |ui| {
         //     ui.heading("My egui Application");
@@ -46,6 +47,9 @@ impl eframe::App for MyApp {
         //     }
         //     ui.label(format!("Hello '{}', age {}", self.name, self.age));
         // });
-        self.custom_3d.ui(ui);
+        if ui.input_mut(|i| i.consume_key(Modifiers::NONE, Key::F5)) {
+            Renderer::load(frame.wgpu_render_state().unwrap());
+        }
+        self.renderer.ui(ui);
     }
 }

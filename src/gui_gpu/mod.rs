@@ -3,23 +3,42 @@ use eframe::egui_wgpu::{self, wgpu};
 use eframe::wgpu::wgt::CommandEncoderDescriptor;
 use eframe::wgpu::{BufferAddress, BufferUsages, ComputePassDescriptor, PrimitiveTopology};
 use egui::{vec2, Response, Ui, Vec2, Widget};
+use std::fs::File;
+use std::io::{BufReader, Read};
+use std::path::Path;
 
 // 2 pixels per point
 const WIDTH: usize = 1200 * 2;
 const HEIGHT: usize = 800 * 2;
 
-pub struct Custom3d {
+// TODO: Entirely dissolve this struct.
+pub struct Renderer {
     offset: Vec2,
     zoom: f32,
 }
 
-impl Custom3d {
-    pub fn new<'a>(render_state: &egui_wgpu::RenderState) -> Option<Self> {
+fn load_shader_source(path: impl AsRef<Path>) -> wgpu::ShaderSource<'static> {
+    let file = File::open(path).expect("could not open shader source file");
+    let mut reader = BufReader::new(file);
+    let mut source = String::new();
+    reader.read_to_string(&mut source).expect("failed to read contents of shader source file");
+    wgpu::ShaderSource::Wgsl(source.into())
+}
+
+impl Renderer {
+    pub fn new() -> Self {
+        Self {
+            offset: Vec2::ZERO,
+            zoom: 1.0,
+        }
+    }
+
+    pub fn load(render_state: &egui_wgpu::RenderState) {
         let device = &render_state.device;
 
         let compute_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("compute"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../compute.wgsl").into()),
+            source: load_shader_source("compute.wgsl"),
         });
 
         let compute_bind_group_layout =
@@ -74,7 +93,7 @@ impl Custom3d {
             mapped_at_creation: false,
         });
 
-        let storage_buffer_size = WIDTH * HEIGHT * size_of::<u32>();
+        let storage_buffer_size = WIDTH * HEIGHT * 8;
 
         let storage_buffer = device.create_buffer(&wgpu::BufferDescriptor {
             label: None,
@@ -100,12 +119,12 @@ impl Custom3d {
 
         let vertex_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("vertex"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../vertex.wgsl").into()),
+            source: load_shader_source("vertex.wgsl"),
         });
 
         let fragment_shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
             label: Some("fragment"),
-            source: wgpu::ShaderSource::Wgsl(include_str!("../../fragment.wgsl").into()),
+            source: load_shader_source("fragment.wgsl"),
         });
 
         let bind_group_layout = device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
@@ -204,15 +223,10 @@ impl Custom3d {
                 uniform_buffer,
                 compute_uniform_buffer,
             });
-
-        Some(Self {
-            offset: Vec2::ZERO,
-            zoom: 1.0,
-        })
     }
 }
 
-impl Widget for &mut Custom3d {
+impl Widget for &mut Renderer {
     fn ui(self, ui: &mut Ui) -> Response {
         egui::CentralPanel::default()
             .show_inside(ui, |ui| {
@@ -241,10 +255,9 @@ impl Widget for &mut Custom3d {
                                         viewport_offset_y: rect.top() * pixels_per_point,
                                         offset_x: (offset.x + rect.left()) * pixels_per_point,
                                         offset_y: (offset.y + rect.top()) * pixels_per_point,
-                                        pixel_size_x: 1.0
+                                        pixel_size: 1.0
                                             / (rect.height() * pixels_per_point * zoom),
-                                        pixel_size_y: 1.0
-                                            / (rect.height() * pixels_per_point * zoom),
+                                        aspect_ratio: rect.aspect_ratio(),
                                     },
                                 ));
 
@@ -284,8 +297,8 @@ struct CustomTriangleCallback {
     viewport_offset_y: f32,
     offset_x: f32,
     offset_y: f32,
-    pixel_size_x: f32,
-    pixel_size_y: f32,
+    pixel_size: f32,
+    aspect_ratio: f32,
 }
 
 impl egui_wgpu::CallbackTrait for CustomTriangleCallback {
@@ -305,8 +318,8 @@ impl egui_wgpu::CallbackTrait for CustomTriangleCallback {
             self.viewport_offset_y,
             self.offset_x,
             self.offset_y,
-            self.pixel_size_x,
-            self.pixel_size_y,
+            self.pixel_size,
+            self.aspect_ratio,
         );
         Vec::new()
     }
@@ -340,8 +353,8 @@ impl RenderResources {
         viewport_offset_y: f32,
         offset_x: f32,
         offset_y: f32,
-        pixel_size_x: f32,
-        pixel_size_y: f32,
+        pixel_size: f32,
+        aspect_ratio: f32,
     ) {
         // Update our uniform buffer with the angle from the UI
         queue.write_buffer(
@@ -360,8 +373,8 @@ impl RenderResources {
             bytemuck::cast_slice(&[
                 offset_x.to_bits(),
                 offset_y.to_bits(),
-                pixel_size_x.to_bits(),
-                pixel_size_y.to_bits(),
+                pixel_size.to_bits(),
+                aspect_ratio.to_bits(),
                 WIDTH as u32,
                 HEIGHT as u32,
             ]),
@@ -380,9 +393,6 @@ impl RenderResources {
             (HEIGHT as u32).div_ceil(16),
             1,
         );
-        compute_pass.on_submitted_work_done(|| {
-            println!("compute shader ran");
-        });
         drop(compute_pass);
         queue.submit([command_encoder.finish()]);
     }
