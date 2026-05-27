@@ -1,3 +1,6 @@
+// TODO: remove
+#![allow(unused)]
+
 mod gui;
 mod gui_gpu;
 

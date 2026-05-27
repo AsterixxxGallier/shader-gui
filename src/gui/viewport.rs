@@ -1,5 +1,5 @@
 use eframe::emath::{Rect, Vec2};
-use egui::{InnerResponse, Sense, Ui};
+use egui::{InnerResponse, Response, Sense, Ui};
 
 pub struct Viewport {
     pub outer_size: Vec2,
@@ -10,7 +10,7 @@ impl Viewport {
         Self { outer_size }
     }
 
-    pub fn show<R>(&self, ui: &mut Ui, offset: &mut Vec2, zoom: &mut f32, add_contents: impl FnOnce(&mut Ui, Rect, Vec2, f32) -> R) -> InnerResponse<R> {
+    pub fn show<R>(&self, ui: &mut Ui, offset: &mut Vec2, zoom: &mut f32, add_contents: impl FnOnce(&mut Ui, Rect, Vec2, f32, &Response) -> R) -> InnerResponse<R> {
         let (rect, response) =
             ui.allocate_exact_size(self.outer_size, Sense::drag());
 
@@ -34,7 +34,7 @@ impl Viewport {
 
         *zoom *= zoom_delta;
 
-        let result = add_contents(ui, rect, *offset, *zoom);
+        let result = add_contents(ui, rect, *offset, *zoom, &response);
 
         InnerResponse::new(result, response)
     }

@@ -1,13 +1,19 @@
 struct Uniforms {
-    viewport_offset: vec2<f32>,
-    buffer_size: vec2<u32>,
+    offset: vec2<f32>,
+    pixel_size: f32,
+    aspect_ratio: f32,
+    size: vec2<u32>,
+    cursor_position: vec2<f32>,
 };
 
 @group(0) @binding(0)
 var<uniform> uniforms: Uniforms;
 
 @group(0) @binding(1)
-var<storage, read> values: array<vec2<f32>>;
+var<storage, read> polar: array<vec2<f32>>;
+
+@group(0) @binding(2)
+var<storage, read_write> colors: array<vec3<f32>>;
 
 fn length_squared(z: vec2<f32>) -> f32 {
     return z.x * z.x + z.y * z.y;
@@ -33,7 +39,7 @@ fn hsl_to_rgb(h: f32, s: f32, l: f32) -> vec3<f32> {
 
 const PI = 3.14159265358979323846264338327950288;
 
-fn complex_color(z: vec2<f32>) -> vec3<f32> {
+fn polar_color(z: vec2<f32>) -> vec3<f32> {
     const NAN_COLOR = vec3(1.0, 0.0, 1.0);
     const INFINITY_COLOR = vec3(1.0, 0.0, 0.0);
 
@@ -41,8 +47,8 @@ fn complex_color(z: vec2<f32>) -> vec3<f32> {
         return NAN_COLOR;
     }
 
-    let norm = length(z);
-    let hue = atan2(z.y, z.x) / PI * -6.0;
+    let norm = z.x;
+    let hue = z.y / PI * -6.0;
     let lightness = sigmoid(norm);
     let base_color = hsl_to_rgb(hue, 0.5, lightness);
 
@@ -63,7 +69,7 @@ fn from_angle(angle: f32) -> vec2<f32> {
     return vec2(cos(angle), sin(angle));
 }
 
-fn to_angle(v: vec2<f32>) -> f32 {
+fn angle(v: vec2<f32>) -> f32 {
     return atan2(v.y, v.x);
 }
 
@@ -105,28 +111,34 @@ fn needle(
     }
 }
 
-fn buffer_value_at(pos: vec2<f32>) -> vec2<f32> {
+fn polar_at(pos: vec2<f32>) -> vec2<f32> {
     let buffer_pos = vec2<u32>(pos);
-    let buffer_index = buffer_pos.x + buffer_pos.y * uniforms.buffer_size.x;
-    return values[buffer_index];
+    let buffer_index = buffer_pos.x + buffer_pos.y * uniforms.size.x;
+    return polar[buffer_index];
 }
 
 fn overlay(below: vec3<f32>, above: vec4<f32>) -> vec3<f32> {
     return below * (1.0 - above.w) + above.xyz * above.w;
 }
 
-@fragment
-fn main(@builtin(position) screen_pos: vec4<f32>) -> @location(0) vec4<f32> {
-    let pos = screen_pos.xy - uniforms.viewport_offset;
-    let value = buffer_value_at(pos);
+@compute @workgroup_size(16, 16)
+fn main(@builtin(global_invocation_id) index_pos: vec3<u32>) {
+    if any(index_pos.xy >= uniforms.size) {
+        return;
+    }
+
+    let pos = vec2<f32>(index_pos.xy);
 
     let rect_size = vec2(50.0);
     let needle_length = 10.0;
     let needle_thickness = 1.0;
     let rect_min = rect_min(rect_size, pos);
     let rect_center = rect_min + rect_size * 0.5;
-    let center_value = buffer_value_at(rect_center);
-    let needle_color = needle(rect_size, needle_length, needle_thickness, pos, to_angle(center_value));
+    let center_value = polar_at(rect_center);
+    let needle_color = needle(rect_size, needle_length, needle_thickness, pos, center_value.y);
 
-    return vec4(overlay(from_srgb(complex_color(value)), needle_color), 1.0);
+    let index = index_pos.x + index_pos.y * uniforms.size.x;
+    let value = polar[index];
+//    colors[index] = from_srgb(overlay(polar_color(value), needle_color));
+    colors[index] = from_srgb(polar_color(value));
 }

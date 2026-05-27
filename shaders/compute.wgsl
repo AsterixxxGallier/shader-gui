@@ -43,9 +43,9 @@ fn recip(a: vec2<f32>) -> vec2<f32> {
 }
 
 fn f(c: vec2<f32>) -> vec2<f32> {
-//    return recip(c);
-//    return mandelbrot(c, 100);
-    return c;
+    return recip(c - vec2(uniforms.slider, 0.0)) * recip(c + vec2(uniforms.slider, 0.0));
+//    return mandelbrot(c, 2000);
+//    return c;
 }
 
 @compute @workgroup_size(16, 16)
